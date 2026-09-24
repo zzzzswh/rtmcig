@@ -20,12 +20,13 @@ x = 1000 m from the Poynting method and from the offset method.</sub>
 
 ```bash
 pip install torch                       # pick the CUDA build for your driver from pytorch.org
-pip install rtmcig                      # pulls in deepwave (prebuilt CPU+CUDA wheel) and numpy
+pip install git+https://github.com/zzzzswh/rtmcig.git   # pulls in deepwave (prebuilt CPU+CUDA wheel) and numpy
 # or, from a checkout:  pip install -e .
 ```
 
-No compiler needed: Deepwave ships prebuilt CPU and CUDA kernels. `pip install "rtmcig[test]"` adds `pytest`; `pytest -q` runs in about a
-minute on the CPU.
+rtmcig is not on PyPI yet, so install it from GitHub or from a checkout. No compiler needed: Deepwave
+ships prebuilt CPU and CUDA kernels. From a checkout, `pip install -e ".[test]"` adds `pytest`
+(`pytest -q` runs in about a minute on the CPU) and `".[plot]"` adds what the examples need.
 
 ## Quick start
 
@@ -172,7 +173,7 @@ does). `op.demo()`, `op.demo_data()` and `op.demo_true_velocity()` set up a two-
 ## Tests, examples, benchmark
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[test,plot]"               # plot: matplotlib and scipy for the examples
 pytest -q                                   # ~1 min on one CPU core
 python examples/plot_adcig.py               # the demo, plotted
 python examples/two_methods.py              # Poynting vs offset gathers at one location

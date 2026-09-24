@@ -17,11 +17,12 @@ RTM 成像（道集叠加）、Poynting 方法与偏移距方法在 x = 1000 m �
 
 ```bash
 pip install torch                       # 按显卡驱动从 pytorch.org 选择 CUDA 版本
-pip install rtmcig                      # 自动安装 deepwave（预编译 CPU+CUDA wheel）与 numpy
+pip install git+https://github.com/zzzzswh/rtmcig.git   # 自动安装 deepwave（预编译 CPU+CUDA wheel）与 numpy
 # 或从源码：  pip install -e .
 ```
 
-无需编译器：Deepwave 自带预编译的 CPU 与 CUDA 核。`pip install "rtmcig[test]"` 附带 `pytest`；`pytest -q` 在 CPU 上约一分钟跑完。
+rtmcig 尚未发布到 PyPI，请从 GitHub 或源码安装。无需编译器：Deepwave 自带预编译的 CPU 与 CUDA 核。
+在源码目录中 `pip install -e ".[test]"` 附带 `pytest`（`pytest -q` 在 CPU 上约一分钟跑完），`".[plot]"` 附带示例所需的依赖。
 
 ## 快速开始
 
@@ -146,7 +147,7 @@ Kaiser 窗 sinc 插值（Hicks 2002，`hicks_halfwidth`）在精确亚网格位�
 ## 测试、示例、基准
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[test,plot]"               # plot：示例所需的 matplotlib 与 scipy
 pytest -q                                   # 单核 CPU 约 1 分钟
 python examples/plot_adcig.py               # 画出 demo 结果
 python examples/two_methods.py              # 同一位置 Poynting 与偏移距方法的道集对比
