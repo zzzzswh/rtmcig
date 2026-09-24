@@ -26,6 +26,7 @@ dependencies = [
     "torch>=2.0",
     "deepwave>=0.0.27",
     "scipy>=1.13.1",
+    "matplotlib>=3.9.4",
 ]
 
 [tool.uv.sources]
