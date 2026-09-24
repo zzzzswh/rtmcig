@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rtmcig"
+dynamic = ["version"]
+description = "GPU reverse-time migration of prestack seismic data to angle-domain common-image gathers (ADCIG), on PyTorch and Deepwave"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "rtmcig contributors" }]
+keywords = [
+    "seismic", "reverse-time migration", "RTM", "angle gather", "ADCIG",
+    "common-image gather", "Poynting vector", "subsurface offset", "deepwave", "pytorch", "GPU",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.22",
+    "torch>=2.0",
+    "deepwave>=0.0.27",
+    "scipy>=1.13.1",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+
+[project.optional-dependencies]
+test = ["pytest>=7", "scipy"]
+plot = ["matplotlib", "scipy"]
+
+[project.urls]
+Homepage = "https://github.com/zzzzswh/rtmcig"
+Issues = "https://github.com/zzzzswh/rtmcig/issues"
+
+[tool.setuptools]
+packages = ["rtmcig"]
+
+[tool.setuptools.dynamic]
+version = { attr = "rtmcig._version.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::UserWarning"]
