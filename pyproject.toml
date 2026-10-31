@@ -25,21 +25,11 @@ dependencies = [
     "numpy>=1.22",
     "torch>=2.0",
     "deepwave>=0.0.27",
-    "scipy>=1.13.1",
     "matplotlib>=3.9.4",
 ]
 
-[tool.uv.sources]
-torch = { index = "pytorch-cu121" }
-
-[[tool.uv.index]]
-name = "pytorch-cu121"
-url = "https://download.pytorch.org/whl/cu121"
-explicit = true
-
-
 [project.optional-dependencies]
-test = ["pytest>=7", "scipy"]
+test = ["pytest>=7"]
 plot = ["matplotlib", "scipy"]
 
 [project.urls]

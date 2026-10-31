@@ -111,14 +111,15 @@ class RTMCIG:
         column). The image is always computed everywhere.
     shot_batch : shots propagated together, or "auto" (fit the snapshot
         storage into ``memory_fraction`` of the free device memory; on the
-        CPU one shot per thread)
+        CPU one shot per thread, up to 8, within ``memory_fraction`` of the
+        available host memory)
     store : where the source-wavefield snapshots live between the forward and
         the backward pass: "device" (default) or "cpu" (pinned host memory,
         streamed over PCIe on a side stream)
     store_dtype : "float16" (default, scaled per snapshot), "bfloat16" or
         "float32"
-    memory_fraction : share of the free device memory ``shot_batch="auto"``
-        may plan for (default 0.7)
+    memory_fraction : share of the free device memory (host memory on the
+        CPU) ``shot_batch="auto"`` may plan for (default 0.7)
     illumination : divide the gathers by the source illumination
         ``sum_t u_s^2`` stabilised with ``eps * max``; ``True`` uses
         ``eps = 0.01``, a float sets it, ``False`` (default) disables
@@ -130,13 +131,16 @@ class RTMCIG:
         is a single cylindrical wave, so its 45-degree phase and
         ``|w|^-1/2`` spectrum survive the cross-correlation and the plain 2D
         RTM wavelet is rotated by 45 degrees and tilted to low frequencies;
-        the filter makes the imaged wavelet zero-phase and centred on the
-        reflector. Same convention as ``kirchcig``'s ``halfderiv``.
+        the filter makes the imaged wavelet of a single source-receiver pair
+        zero-phase and centred on the reflector. With a receiver spread the
+        sum over the receivers rotates it by roughly another 45 degrees,
+        which a second ``half_derivative`` of the data removes (see the
+        README). Same convention as ``kirchcig``'s ``halfderiv``.
     halfderiv_rho : leak of the half difference, default ``1 - 1/nt``
     pml_width : absorbing-layer width in cells (default 20)
-    free_surface : rigid (pressure-free) top boundary instead of an absorbing
-        one (default False). Use only when the data contain the surface
-        multiples the propagation should reproduce.
+    free_surface : free-surface (zero-pressure) top boundary instead of an
+        absorbing one (default False). Use only when the data contain the
+        surface multiples the propagation should reproduce.
     accuracy : spatial finite-difference order, 2, 4 (default), 6 or 8
     interpolation : "nearest" (default) rounds positions to the nearest cell;
         "hicks" injects/records at sub-cell positions with Kaiser-windowed
@@ -372,7 +376,18 @@ class RTMCIG:
         if self.shot_batch != "auto":
             return min(int(self.shot_batch), self.ns), store
         if self.device.type != "cuda":
-            return max(1, min(self.ns, torch.get_num_threads(), 8)), "device"
+            # one shot per thread, as far as the host memory allows
+            B = max(1, min(self.ns, torch.get_num_threads(), 8))
+            free = free_memory(self.device)
+            if free is None:
+                return B, "device"
+            budget = self.memory_fraction * free
+            per_shot = self._work_bytes(1, ncols) + self.snapshot_bytes(1, ncols)
+            if per_shot > budget:
+                warnings.warn(f"one shot needs about {human_bytes(per_shot)} of host memory, more than "
+                              f"{human_bytes(budget)} available (memory_fraction={self.memory_fraction:g}); "
+                              "image_dt, store_dtype, aperture or cig_x reduce it", stacklevel=3)
+            return int(max(1, min(B, budget // max(per_shot, 1)))), "device"
         free = free_memory(self.device)
         budget = self.memory_fraction * free
         per_shot = self._work_bytes(1, ncols) + (self.snapshot_bytes(1, ncols) if store == "device" else 0)
@@ -578,8 +593,13 @@ class RTMCIG:
         if poynting:
             adcig = adcig_flat.view(self.nh, nz, self.n_cig)
         else:
-            adcig = slant_stack(odcig, self._h_cells.to(torch.float32) * self.dx, self.dz,
-                                torch.as_tensor(self.angles, dtype=torch.float32), self.offset_taper)
+            h_m = self._h_cells.to(torch.float32) * self.dx
+            ang = torch.as_tensor(self.angles, dtype=torch.float32)
+            adcig = slant_stack(odcig, h_m, self.dz, ang, self.offset_taper)
+            if not self.signed:
+                # |theta| axis: events with the source on the +x side have negative
+                # angles; stack them too, as the Poynting branch does with theta.abs()
+                adcig = adcig + slant_stack(odcig, h_m, self.dz, -ang, self.offset_taper)
             self.odcig = like_input(odcig.permute(0, 2, 1).contiguous(), ref)
         if self.illumination is not None:
             ill = illum if self._cig_cols is None else illum[:, self._cig_cols.to(dev)]

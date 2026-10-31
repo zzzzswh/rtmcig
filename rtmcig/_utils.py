@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import time
 
 import numpy as np
@@ -80,11 +81,30 @@ def human_bytes(n: float) -> str:
 
 
 def free_memory(device: torch.device) -> int | None:
-    """Free bytes on the device, or None when unknown (CPU)."""
+    """Free bytes on the device: CUDA memory for a CUDA device, available host
+    memory for the CPU, or None when it cannot be determined."""
     if device.type == "cuda":
         free, _total = torch.cuda.mem_get_info(device)
         return int(free)
+    if device.type == "cpu":
+        return host_available_memory()
     return None
+
+
+def host_available_memory() -> int | None:
+    """Available host memory in bytes (Linux ``MemAvailable``, else the free
+    physical pages where ``sysconf`` reports them), or None when unknown."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        return int(os.sysconf("SC_AVPHYS_PAGES")) * int(os.sysconf("SC_PAGE_SIZE"))
+    except (AttributeError, ValueError, OSError):
+        return None
 
 
 class Timer:

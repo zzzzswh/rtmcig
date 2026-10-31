@@ -38,7 +38,10 @@ def half_derivative(d: torch.Tensor, rho: float | None = None, adjoint: bool = T
     is one cylindrical Green's function whose ``-45`` degree phase and
     ``|w|^-1/2`` spectrum are not cancelled by the back-propagation, so the
     plain RTM wavelet is rotated by 45 degrees and tilted to low frequencies;
-    ``conj(H)`` removes both."""
+    ``conj(H)`` removes both for a single source-receiver pair. With a
+    receiver spread the sum over the receivers (a stationary-phase integral
+    along the line) adds roughly another 45 degrees, which a second
+    application removes."""
     nt = d.shape[-1]
     n = 2 * nt
     rho = (1.0 - 1.0 / nt) if rho is None else float(rho)
@@ -210,12 +213,14 @@ def slant_stack(odcig: torch.Tensor, h: torch.Tensor, dz: float, angles_deg: tor
                 taper_frac: float = 0.2, col_chunk: int = 256) -> torch.Tensor:
     """Offset gathers ``(nho, nz, ncol)`` -> angle gathers ``(nh, nz, ncol)``.
 
-    ``A(z, theta) = (1/nho) sum_h I(z + h tan theta, h)`` evaluated in the
-    Fourier domain along z (exact interpolation), with the depth axis
-    zero-padded so that the shifted traces do not wrap around. ``h`` are the
-    offsets in metres, ``angles_deg`` the output angles (|theta| < 90). The
-    ``1/nho`` normalisation gives a perfectly focused event the amplitude of
-    the image at its angle.
+    ``A(z, theta) = sum_h w_h I(z + h tan theta, h) / sum_h w_h``, with
+    ``w_h`` the cosine taper over the outer ``taper_frac`` of the offset
+    axis, evaluated in the Fourier domain along z (exact interpolation), with
+    the depth axis zero-padded so that the shifted traces do not wrap around.
+    ``h`` are the offsets in metres, ``angles_deg`` the output angles
+    (|theta| < 90). Normalising by the taper weight (not by the number of
+    offsets) gives a perfectly focused event the amplitude of the image at
+    its angle whatever the taper.
     """
     nho, nz, ncol = odcig.shape
     device = odcig.device
@@ -230,7 +235,7 @@ def slant_stack(odcig: torch.Tensor, h: torch.Tensor, dz: float, angles_deg: tor
     kz = 2 * math.pi * torch.fft.rfftfreq(nzp, d=dz).to(device=device, dtype=torch.float32)  # (nk,)
     # phase[k, t, ih] = exp(i kz[k] * h[ih] * tan[t])
     phase = torch.exp(1j * (kz[:, None, None] * tan[None, :, None] * h[None, None, :]))    # (nk, nh, nho) c64
-    phase = phase * (w / max(nho, 1))[None, None, :]
+    phase = phase * (w / w.sum().clamp_min(1e-12))[None, None, :]
     out = torch.empty(nh, nz, ncol, dtype=odcig.dtype, device=device)
     for c0 in range(0, ncol, col_chunk):
         c1 = min(c0 + col_chunk, ncol)

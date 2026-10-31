@@ -120,6 +120,43 @@ def test_wavelet_is_zero_phase_at_zero_offset():
         assert abs(col[a] - col[b]) < 0.3 * col[k]
 
 
+def wavelet_phase(col, iz_skip=8, fine=16):
+    """Phase [deg] of the analytic signal of an image column at its envelope
+    peak: 0 for a zero-phase positive wavelet. The first ``iz_skip`` cells are
+    zeroed to skip the near-surface artefacts."""
+    c = np.array(col, dtype=np.float64)
+    c[:iz_skip] = 0.0
+    m = len(c)
+    spec = np.fft.fft(c)
+    a = np.zeros(m * fine, dtype=complex)          # analytic signal, upsampled
+    a[0] = spec[0]
+    a[1:(m + 1) // 2] = 2 * spec[1:(m + 1) // 2]
+    if m % 2 == 0:
+        a[m // 2] = spec[m // 2]
+    z = np.fft.ifft(a) * fine
+    return float(np.degrees(np.angle(z[int(np.abs(z).argmax())])))
+
+
+def test_halfderiv_with_receiver_spread():
+    """With a receiver line the sum over the receivers adds about 45 degrees
+    that halfderiv does not remove; one more half-derivative of the data (a
+    full derivative in total) does. See IMPLEMENTATION_NOTES section 3."""
+    from rtmcig import half_derivative
+    vel = np.full((NX, NZ), V0, dtype=np.float32)
+    srcs = np.stack([np.linspace(200.0, 600.0, 17), np.zeros(17)])
+    recs = np.stack([np.arange(NX) * DX, np.zeros(NX)])
+    op = RTMCIG(vel, DX, DX, srcs, recs, NT, DT, f0=F0, nh=9, hmax=90.0, halfderiv=True,
+                method="offset", offsets=1)
+    data = reflection_data(op)
+    op.migrate(data)
+    half = wavelet_phase(op.image[38:43].mean(0))
+    op.migrate(half_derivative(torch.as_tensor(data)).numpy())
+    full = wavelet_phase(op.image[38:43].mean(0))
+    assert 30.0 < half < 65.0           # measured +48
+    assert abs(full) < 20.0             # measured +6
+    assert abs(peak_depth(op.image, 40) - Z0) <= 1.5 * DX
+
+
 # ----------------------------------------------------------------- angles
 def angle_test_op(**kw):
     """One shot in the middle of a full-spread line."""
@@ -174,6 +211,20 @@ def test_offset_method_outputs():
     for ix in (28, 32, 48, 52):
         prof = np.abs(op.odcig[:, ix, 14:26]).sum(1)
         assert abs(int(prof.argmax()) - 10) <= 1
+
+
+@pytest.mark.parametrize("taper", [0.0, 0.2, 0.5])
+def test_slant_stack_keeps_focused_amplitude(taper):
+    """A unit event along z = z0 + h tan(theta) stacks to amplitude 1 at theta,
+    whatever the offset taper."""
+    from rtmcig import slant_stack
+    nz, dz = 200, 10.0
+    h = torch.arange(-20, 21, dtype=torch.float32) * DX
+    z = torch.arange(nz, dtype=torch.float32)[None, :] * dz
+    for theta in (0.0, 20.0, 35.0):
+        odcig = torch.exp(-0.5 * ((z - 1000.0 - h[:, None] * math.tan(math.radians(theta))) / 15.0) ** 2)
+        a = slant_stack(odcig[:, :, None].contiguous(), h, dz, torch.tensor([theta]), taper)
+        assert abs(float(a.max()) - 1.0) < 1e-3
 
 
 # ----------------------------------------------------------- invariances
@@ -412,3 +463,18 @@ def test_planning_helpers(basic_op):
     assert op.snapshot_bytes(1) == op.n_snapshots * NZ * NX * 4       # float16 + int16 direction
     B, store = op._plan_batch(NX)
     assert 1 <= B <= 3 and store in ("device", "cpu")
+
+
+def test_cpu_batch_respects_host_memory(monkeypatch):
+    import rtmcig._operator as operator
+    vel, srcs, recs = geometry(ns=6)
+    op = RTMCIG(vel, DX, DX, srcs, recs, NT, DT, f0=F0, device="cpu", shot_batch="auto")
+    per_shot = op._work_bytes(1, NX) + op.snapshot_bytes(1, NX)
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 8)
+    monkeypatch.setattr(operator, "free_memory", lambda device: None)
+    assert op._plan_batch(NX) == (6, "device")                  # unknown memory: one shot per thread
+    monkeypatch.setattr(operator, "free_memory", lambda device: int(2.5 * per_shot / op.memory_fraction))
+    assert op._plan_batch(NX) == (2, "device")
+    monkeypatch.setattr(operator, "free_memory", lambda device: int(0.5 * per_shot / op.memory_fraction))
+    with pytest.warns(UserWarning, match="host memory"):
+        assert op._plan_batch(NX) == (1, "device")

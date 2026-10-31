@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Slant stack (`method="offset"`): normalised by the sum of the offset-taper weights instead of
+  the number of offsets, so a focused event keeps the image amplitude (it was about 10% low with
+  the default `offset_taper=0.2`).
+- `shot_batch="auto"` on the CPU stays within `memory_fraction` of the available host memory
+  and warns when one shot does not fit.
+- `halfderiv`: documented that it makes the wavelet of a single source-receiver pair
+  zero-phase; with a receiver spread a full derivative is needed (new test).
+- Dependencies: scipy is no longer required (only the examples use it, via the `plot` extra);
+  torch is no longer pinned to the CUDA 12.1 index for uv.
+- Docs: install from GitHub (not on PyPI yet); `free_surface` is a zero-pressure boundary.
+
 ## 0.1.0
 
 First release.

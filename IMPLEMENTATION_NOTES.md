@@ -60,6 +60,20 @@ centred on the interface to within half a cell. `halfderiv=False` by default, as
 `kirchcig`; the raw wavelet then has its largest lobe on the interface and a strong
 trailing lobe.
 
+That accounts for one Green's function, not for the acquisition. With a receiver line
+the receiver wavefield at an image point is `sum_r conj(G(x, r)) D(r)`, and for a dense
+line that sum is a stationary-phase integral along the receivers, which contributes
+another `e^{i pi/4} |w|^-1/2`. So with a receiver spread the image is rotated by about
+90 degrees without the filter and about 45 with it, and it takes a full time derivative
+(`halfderiv` plus one more `half_derivative` of the data) to make it zero-phase. Measured
+in the test model (reflector at 195 m, averaged over x = 380-420 m, phase of the analytic
+signal at the envelope peak): 17 shots over 400 m into all 81 receivers give +90 degrees
+without the filter, +48 with `halfderiv` and +6 with the full derivative. A narrow shot
+aperture compared with the depth makes the residual larger and less regular (9 shots over
+200 m: +78 with `halfderiv`), because the image point is then not surrounded by
+contributing shots. `halfderiv` keeps its single-trace definition, `kirchcig`'s
+convention; `test_halfderiv_with_receiver_spread` checks the 17-shot numbers.
+
 Polarity: with `halfderiv=True` the zero-offset image of a velocity increase is a
 negative symmetric lobe in Deepwave's sign convention (its source term is
 `-v^2 f`), so the image is `-sum_t u_s u_r`, which makes a velocity (impedance)
@@ -115,10 +129,12 @@ crosstalk noise that single-shot gathers show at other angles.
 
 `I(x, z, h) = sum_t u_s(x-h) u_r(x+h)` over the offsets `-offsets*step ... +offsets*step`
 cells, accumulated with shifted slices (index_select for `cig_x` subsets). The angle
-transform is `A(z, theta) = (1/nho) sum_h I(z + h tan theta, h)`, evaluated by
+transform is `A(z, theta) = sum_h w_h I(z + h tan theta, h) / sum_h w_h`, evaluated by
 multiplying the `z`-FFT of each offset panel with `exp(i k_z h tan theta)` (exact
 sub-sample shifts), with zero padding in depth so that nothing wraps, a cosine taper
-on the outer `offset_taper` of the offset axis and chunking over columns. The sign of
+`w_h` on the outer `offset_taper` of the offset axis and chunking over columns.
+Dividing by the taper weight rather than by `nho` keeps a focused event at the
+image's amplitude (with the default taper, `1/nho` left it about 10% low). The sign of
 the tangent is chosen so that positive angles again mean "source on the -x side";
 the tests check this against geometry and against the Poynting result. Right below a
 shot the single-shot ODCIG is a vertical strip over all offsets (the source and
@@ -136,7 +152,9 @@ The host store keeps two device buffers and streams the next snapshot on a side
 stream while the current one is imaged (`record_stream` protects the temporaries;
 `wait_stream` orders reuse of a buffer after the kernels that read it). On the CPU the
 "device" store is host memory anyway and Deepwave parallelises over the shots of a
-batch with OpenMP.
+batch with OpenMP; `shot_batch="auto"` takes one shot per thread (up to 8) but no more
+than fit into `memory_fraction` of the available host memory (`MemAvailable` on Linux),
+and warns when a single shot does not fit, since there is nothing to fall back to.
 
 `aperture` propagates each batch on the columns between its sources and live
 receivers plus the aperture, replicating the model edges into the PML; the batch

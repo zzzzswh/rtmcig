@@ -108,8 +108,8 @@ few hundred metres deep under a spread of kilometres, less at depth; the bias sc
 `I(x, z, h) = sum_t u_s(x-h) u_r(x+h)` over `2*offsets+1` half-offsets and slant-stacks it to angle
 in the Fourier domain (Sava & Fomel 2003). Accurate to a degree or two in the tests, at the cost
 of `2*offsets+1` multiply-adds per imaging step and an `(nho, nx, nz)` intermediate that is kept as
-`op.odcig`. The slant stack is normalised by the number of offsets, so a focused event has the
-image's amplitude at its angle.
+`op.odcig`. The slant stack is normalised by the sum of its offset-taper weights, so a focused event has
+the image's amplitude at its angle.
 
 Both give signed angles with `signed=True` (positive: source on the -x side of the reflection
 point); `fold_angles` folds a signed gather to `|theta|`.
@@ -131,9 +131,27 @@ In two dimensions a specular reflection is one cylindrical Green's function, who
 phase and `|omega|^-1/2` spectrum are not cancelled by the back-propagation, so the plain 2D RTM
 wavelet is rotated by 45 degrees and tilted to low frequencies. `halfderiv=True` applies
 `conj(sqrt(1 - rho e^{-i omega}))`, the adjoint half-order time derivative (`sf_halfint`, the
-same filter and convention as `kirchcig`), to the data before migration; the imaged wavelet is
-then zero-phase and centred on the reflector. Polarity: a velocity increase images as a
-**positive** peak for data modelled by `op.model` (or Deepwave) with the same wavelet.
+same filter and convention as `kirchcig`), to the data before migration; for a single
+source-receiver pair the imaged wavelet is then zero-phase and centred on the reflector.
+
+With a receiver spread that is no longer the whole story: the receiver wavefield at an image
+point is a sum over the receivers, a stationary-phase integral along the line, which rotates the
+wavelet by roughly another 45 degrees that `halfderiv` does not remove. In the tests' two-layer
+model (reflector at 195 m), 17 shots over 400 m into a full receiver line give an imaged wavelet
+with a phase of about +90 degrees without the filter, +48 with `halfderiv` and +6 with
+`halfderiv` plus one more half-derivative of the data, a full time derivative in total:
+
+```python
+import torch
+from rtmcig import half_derivative
+data = half_derivative(torch.as_tensor(data)).numpy()     # then migrate with halfderiv=True
+```
+
+The residual depends on the geometry (it is larger and less regular when the shot aperture is
+narrow compared with the depth), so check it on your survey when the phase matters.
+
+Polarity: a velocity increase images as a **positive** peak for data modelled by `op.model` (or
+Deepwave) with the same wavelet.
 
 ### Memory and speed
 
@@ -150,7 +168,8 @@ memory. `op.snapshot_bytes(shots)` says how much.
   stream, double-buffered, while the imaging kernels run.
 - `shot_batch="auto"` propagates as many shots together as fit into `memory_fraction` of the free
   device memory (Deepwave batches shots in one kernel launch), and switches to the host store when
-  one shot does not fit. On the CPU one shot per thread.
+  one shot does not fit. On the CPU one shot per thread (up to 8), within `memory_fraction` of
+  the available host memory; a warning says when even one shot does not fit.
 - `aperture` [m] restricts each batch to the columns around its shots and live receivers; sort
   the shots along the line so that batched shots share a window. `cig_x` outputs gathers only at
   the given positions (the image is always full).
@@ -182,7 +201,8 @@ python benchmarks/bench.py                  # ms per shot on your device
 ```
 
 The tests check: the gathers sum to the image; the reflector is imaged at the right depth with
-the right polarity; the zero-offset wavelet is zero-phase with `halfderiv`; the angles follow the
+the right polarity; the zero-offset wavelet is zero-phase with `halfderiv`, and with a receiver
+line it takes a full derivative to get there; the angles follow the
 geometry for both methods and both engines; signed folds to unsigned; batching, aperture,
 `cig_x`, the store dtypes, the host store and `image_dt` do not change the answer beyond their
 stated tolerances; dead traces equal zeroed traces; duplicate receivers are summed; Hicks and
