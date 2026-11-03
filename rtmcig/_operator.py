@@ -1,6 +1,7 @@
 """The ``RTMCIG`` operator and the one-shot ``migrate`` function."""
 from __future__ import annotations
 
+import gc
 import logging
 import math
 import warnings
@@ -586,10 +587,13 @@ class RTMCIG:
                         imager.add(odcig, cols_sel, out_cols, us.neg(), ur)
 
                 prop.run(rec_amp, rec_loc, L, bwd)
-                # fwd / bwd hold the store through their default arguments: drop them too,
-                # otherwise the next batch allocates its store while this one is still alive
-                # and the peak memory is two stores (OOM when the batch was sized for one)
+                # fwd / bwd hold the store through their default arguments, and Deepwave can keep
+                # the callbacks alive in a reference cycle, so ``del`` alone does not release it:
+                # the next batch then allocates its store while this one is still held and the
+                # peak is two stores (OOM when the batch was sized for one). Free it explicitly.
+                store.free()
                 del store, fwd, bwd, prop, src_amp, src_loc, rec_amp, rec_loc, d
+                gc.collect()
             logger.info("shots %d-%d: columns %d-%d, %.2fs", b0, b1 - 1, ix0, ix1 - 1, tm.elapsed)
 
         # ---- assemble -------------------------------------------------------------

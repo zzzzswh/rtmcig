@@ -63,6 +63,16 @@ class SnapshotStore:
         self._scale = (torch.ones((self.n_snap, self.batch), dtype=torch.float32, device=self.device)
                        if self.scaled else None)
 
+    def free(self) -> None:
+        """Release the snapshot memory now, even if something (a callback that
+        Deepwave keeps alive in a reference cycle) still holds this object."""
+        if self.location == "cpu" and hasattr(self, "_stream"):
+            self._stream.synchronize()
+        self._f = self._d = self._scale = None
+        for name in ("_buf_f", "_buf_d", "_events", "_put_events"):
+            if hasattr(self, name):
+                setattr(self, name, None)
+
     # --------------------------------------------------------------- sizing
     @staticmethod
     def bytes_per_cell(dtype: torch.dtype, direction: bool) -> int:
