@@ -586,7 +586,10 @@ class RTMCIG:
                         imager.add(odcig, cols_sel, out_cols, us.neg(), ur)
 
                 prop.run(rec_amp, rec_loc, L, bwd)
-                del store
+                # fwd / bwd hold the store through their default arguments: drop them too,
+                # otherwise the next batch allocates its store while this one is still alive
+                # and the peak memory is two stores (OOM when the batch was sized for one)
+                del store, fwd, bwd, prop, src_amp, src_loc, rec_amp, rec_loc, d
             logger.info("shots %d-%d: columns %d-%d, %.2fs", b0, b1 - 1, ix0, ix1 - 1, tm.elapsed)
 
         # ---- assemble -------------------------------------------------------------

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `migrate`: the snapshot store of a shot batch was still referenced by the `fwd` / `bwd`
+  callbacks (default arguments) when the next batch allocated its own, so the peak memory was two
+  stores and `shot_batch="auto"` ran out of GPU memory on the second batch. Fixed.
 - Slant stack (`method="offset"`): normalised by the sum of the offset-taper weights instead of
   the number of offsets, so a focused event keeps the image amplitude (it was about 10% low with
   the default `offset_taper=0.2`).
